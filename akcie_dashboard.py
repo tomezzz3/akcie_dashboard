@@ -149,7 +149,7 @@ currency = df["Měna"].mode().values[0] if "Měna" in df.columns else "USD"
 df["Cena"] = df["Cena"].map(lambda x: f"{currency} {x:.2f}")
 df["ROE"] = df["ROE"] * 100
 df["ROE"] = df["ROE"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and pd.notnull(x) else "N/A")
-df["Dividenda"] = df["Dividenda"].map(lambda x: f"{currency} {x:.2f}" if pd.notnull(x) else "N/A")
+df["Dividenda"] = df["Dividenda"].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) and pd.notnull(x) else "N/A")
 df["Free Cash Flow"] = df["Free Cash Flow"].map(lambda x: f"{x/1e6:.0f} mil." if pd.notnull(x) else "N/A")
 df["Market Cap"] = df["Market Cap"].map(lambda x: f"{x/1e9:.1f} mld." if pd.notnull(x) else "N/A")
 df["Payout Ratio"] = df["Payout Ratio"].map(lambda x: f"{x:.0%}" if pd.notnull(x) else "N/A")
@@ -177,7 +177,7 @@ if page == "📋 Dashboard":
     styled_df["P/E"] = styled_df["P/E"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
     styled_df["ROE"] = styled_df["ROE"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and pd.notnull(x) else "N/A")
     styled_df["EPS"] = styled_df["EPS"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
-    styled_df["Dividenda"] = styled_df["Dividenda"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
+    styled_df["Dividenda"] = styled_df["Dividenda"].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) and pd.notnull(x) else "N/A")
 
     st.dataframe(
         styled_df.style.background_gradient(subset=["P/E", "ROE", "EPS", "Dividenda"], cmap="RdYlGn", axis=0).format(precision=2),

@@ -14,11 +14,12 @@ HISTORY_FILE = "skore_history.csv"
 @st.cache_data(show_spinner=False)
 def get_all_tickers():
     sp500 = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")[0]["Symbol"].tolist()
-    dax = pd.read_html("https://en.wikipedia.org/wiki/DAX")[1]["Ticker symbol"].tolist()
+    dax_table = pd.read_html("https://en.wikipedia.org/wiki/DAX")[1]
+    dax_symbols = dax_table[dax_table.columns[0]].tolist()
     ceske = ["CEZ.PR", "KOMB.PR", "MONET.PR"]
     polske = ["PKN.OL", "PKOBP.OL", "PEKAO.OL"]
     lse = ["HSBA.L", "TSCO.L", "BP.L"]
-    return sp500 + dax + ceske + polske + lse
+    return sp500 + dax_symbols + ceske + polske + lse
 
 @st.cache_data(show_spinner=False)
 def get_stock_info(ticker):
@@ -148,3 +149,4 @@ csv = filtered.to_csv(index=False).encode("utf-8")
 st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
 
 st.caption("Data: Yahoo Finance + Wikipedia")
+

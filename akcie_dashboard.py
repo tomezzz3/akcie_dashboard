@@ -1,4 +1,4 @@
-# ŽIDŮV DASHBOARD
+# STABILNÍ DASHBOARD (barevné skóre + top 5 + PDF a email)
 import yfinance as yf
 import pandas as pd
 import streamlit as st
@@ -26,7 +26,7 @@ def get_all_tickers():
     lse = ["HSBA.L", "TSCO.L", "BP.L"]
     nasdaq_tables = pd.read_html("https://en.wikipedia.org/wiki/NASDAQ-100")
     for table in nasdaq_tables:
-        if any(col.lower() in ["ticker", "symbol"] for col in table.columns):
+        if any(isinstance(col, str) and col.lower() in ["ticker", "symbol"] for col in table.columns):
             nasdaq = table[table.columns[0]].tolist()
             break
     else:

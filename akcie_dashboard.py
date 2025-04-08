@@ -1,3 +1,4 @@
+# DASHBOARD PRO INVESTORA ZAMĚŘENÉHO NA RŮST + DIVIDENDU + PODHODNOCENÍ + RIZIKO
 import yfinance as yf
 import pandas as pd
 import streamlit as st
@@ -97,7 +98,6 @@ df["Free Cash Flow"] = df["Free Cash Flow"].map(lambda x: f"{x/1e6:.0f} mil." if
 df["Market Cap"] = df["Market Cap"].map(lambda x: f"{x/1e9:.1f} mld." if pd.notnull(x) else "N/A")
 df["Payout Ratio"] = df["Payout Ratio"].map(lambda x: f"{x:.0%}" if pd.notnull(x) else "N/A")
 
-# Filtrování
 st.sidebar.header("🔍 Filtrování")
 sector = st.sidebar.multiselect("Sektor", sorted(df["Sektor"].dropna().unique()))
 burza = st.sidebar.multiselect("Burza", sorted(df["Burza"].unique()))
@@ -110,7 +110,6 @@ if burza: filtered = filtered[filtered["Burza"].isin(burza)]
 if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
-# 🔝 Zvýraznění nejlepší akcie
 max_score = filtered["Skóre"].max()
 highlight_code = JsCode(f"""
     function(params) {{
@@ -123,15 +122,16 @@ highlight_code = JsCode(f"""
     }}
 """)
 
-# 📋 Výběr pomocí AgGrid
 st.subheader("📋 Výběr akcií (klikni na řádek)")
 gb = GridOptionsBuilder.from_dataframe(filtered)
 gb.configure_selection("single")
 gb.configure_column("Skóre", cellStyle=highlight_code)
 grid_options = gb.build()
 
-# bezpečný dataframe pro AgGrid
-safe_filtered = filtered.fillna("N/A")
+safe_filtered = filtered.copy()
+safe_filtered = safe_filtered.fillna("")
+for col in ["Cena", "Dividenda", "Payout Ratio", "ROE", "Free Cash Flow", "Market Cap"]:
+    safe_filtered[col] = safe_filtered[col].astype(str)
 
 response = AgGrid(
     safe_filtered,
@@ -142,7 +142,6 @@ response = AgGrid(
 )
 selected_row = response.get("selected_rows", [])
 
-# 📊 Výstup po výběru
 if isinstance(selected_row, list) and len(selected_row) > 0:
     ticker = selected_row[0]['Ticker']
     st.markdown("---")
@@ -164,8 +163,8 @@ if isinstance(selected_row, list) and len(selected_row) > 0:
             fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
             st.plotly_chart(fig, use_container_width=True)
 
-# 📥 Export
 csv = filtered.to_csv(index=False).encode("utf-8")
 st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
 
 st.caption("Data: Yahoo Finance + Wikipedia")
+

@@ -1,10 +1,15 @@
-# STABILNÍ DASHBOARD (barevné skóre + top 5)
+# STABILNÍ DASHBOARD (barevné skóre + top 5 + PDF a email)
 import yfinance as yf
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 from datetime import datetime
 import os
+import matplotlib.pyplot as plt
+import pdfkit
+from jinja2 import Environment, FileSystemLoader
+import smtplib
+from email.message import EmailMessage
 
 st.set_page_config(layout="wide")
 st.title("📈 Investiční akcie – růst, zisk a hodnota")
@@ -91,6 +96,49 @@ def log_score_history(df):
         combined = log_df
     combined.to_csv(HISTORY_FILE, index=False)
 
+def generate_price_chart(ticker, period="1y", output_path="chart.png"):
+    hist = yf.Ticker(ticker).history(period=period)
+    if not hist.empty:
+        plt.figure(figsize=(10, 4))
+        plt.plot(hist.index, hist["Close"], label="Cena")
+        plt.title(f"Vývoj ceny za {period} – {ticker}")
+        plt.xlabel("Datum")
+        plt.ylabel("Cena")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(output_path)
+        return output_path
+    return None
+
+def generate_pdf(ticker, selected, chart_path):
+    env = Environment(loader=FileSystemLoader('.'))
+    template = env.get_template("template.html")
+    html = template.render(
+        ticker=ticker,
+        name=selected["Název"],
+        sector=selected["Sektor"],
+        phase=selected["Fáze"],
+        metrics=selected,
+        chart_path=chart_path,
+        date=datetime.today().strftime("%d.%m.%Y %H:%M")
+    )
+    pdfkit.from_string(html, "report.pdf")
+
+def send_email_with_attachment(receiver_email):
+    msg = EmailMessage()
+    msg["Subject"] = "Tvůj PDF report – akcie"
+    msg["From"] = "noreply@example.com"
+    msg["To"] = receiver_email
+    msg.set_content("V příloze nalezneš PDF report tvé vybrané akcie.")
+    with open("report.pdf", "rb") as f:
+        msg.add_attachment(f.read(), maintype="application", subtype="pdf", filename="report.pdf")
+    with smtplib.SMTP("smtp.example.com", 587) as server:
+        server.starttls()
+        server.login("your_email@example.com", "your_password")
+        server.send_message(msg)
+
+# === ZAČÁTEK HLAVNÍHO KÓDU ===
+
 with st.spinner("Načítám data..."):
     tickers = get_all_tickers()
     data = [get_stock_info(t) for t in tickers]
@@ -119,4 +167,60 @@ if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
 st.subheader("⭐ TOP 5 akcií podle skóre")
-top5 =
+top5 = filtered.sort_values("Skóre", ascending=False).head(5)
+st.dataframe(top5.set_index("Ticker"), use_container_width=True)
+
+st.subheader("📋 Výběr akcie")
+ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
+selected = filtered[filtered["Ticker"] == ticker].iloc[0]
+
+styled_df = filtered.copy()
+styled_df["Skóre"] = styled_df["Skóre"].astype(int)
+st.dataframe(
+    styled_df.style.background_gradient(subset="Skóre", cmap="RdYlGn", axis=0).set_precision(2),
+    use_container_width=True
+)
+
+st.markdown("---")
+st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
+for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
+    hist = yf.Ticker(ticker).history(period=period)
+    if not hist.empty:
+        change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
+        trend = "🔺" if change >= 0 else "🔻"
+        st.markdown(f"### {label}: {trend} {change:.2f}%")
+        fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
+        st.plotly_chart(fig, use_container_width=True)
+
+if os.path.exists(HISTORY_FILE):
+    st.subheader("📈 Vývoj skóre – historie")
+    history_df = pd.read_csv(HISTORY_FILE)
+    chart_df = history_df[history_df["Ticker"] == ticker]
+    if not chart_df.empty:
+        fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
+        st.plotly_chart(fig, use_container_width=True)
+
+# 📄 Export PDF a odeslání e-mailem
+st.markdown("---")
+if st.button("📄 Exportovat PDF report"):
+    chart_path = generate_price_chart(ticker)
+    generate_pdf(ticker, selected, chart_path)
+    with open("report.pdf", "rb") as f:
+        st.download_button("📥 Stáhnout PDF", data=f, file_name=f"{ticker}_report.pdf", mime="application/pdf")
+
+email = st.text_input("📧 Zadat e-mail pro odeslání PDF:")
+if st.button("✉️ Odeslat e-mailem"):
+    if email:
+        try:
+            send_email_with_attachment(email)
+            st.success(f"PDF report odeslán na {email}")
+        except Exception as e:
+            st.error(f"Chyba při odesílání: {e}")
+    else:
+        st.warning("Zadej prosím e-mailovou adresu.")
+
+csv = filtered.to_csv(index=False).encode("utf-8")
+st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
+
+st.caption("Data: Yahoo Finance + Wikipedia")
+

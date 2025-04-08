@@ -1,4 +1,4 @@
-# STABILNÍ DASHBOARD (bez AgGrid)
+# STABILNÍ DASHBOARD (barevné skóre + top 5)
 import yfinance as yf
 import pandas as pd
 import streamlit as st
@@ -67,9 +67,7 @@ def calculate_score(info):
     score = 0
     payout_ratio = info.get("payoutRatio") or 0
     eps = info.get("trailingEps", 0)
-    roe = info.get("returnOnEquity", 0)
     phase = classify_phase(info)
-
     if info.get("trailingPE") and info["trailingPE"] < 15: score += 3
     if payout_ratio > 0:
         if phase == "📈 Růstová" and 0.1 < payout_ratio < 0.4: score += 2
@@ -120,33 +118,5 @@ if burza: filtered = filtered[filtered["Burza"].isin(burza)]
 if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
-st.subheader("📋 Výběr akcie")
-ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
-selected = filtered[filtered["Ticker"] == ticker].iloc[0]
-
-st.dataframe(filtered.set_index("Ticker"), use_container_width=True)
-
-st.markdown("---")
-st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
-for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
-    hist = yf.Ticker(ticker).history(period=period)
-    if not hist.empty:
-        change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
-        trend = "🔺" if change >= 0 else "🔻"
-        st.markdown(f"### {label}: {trend} {change:.2f}%")
-        fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
-        st.plotly_chart(fig, use_container_width=True)
-
-if os.path.exists(HISTORY_FILE):
-    st.subheader("📈 Vývoj skóre – historie")
-    history_df = pd.read_csv(HISTORY_FILE)
-    chart_df = history_df[history_df["Ticker"] == ticker]
-    if not chart_df.empty:
-        fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
-        st.plotly_chart(fig, use_container_width=True)
-
-csv = filtered.to_csv(index=False).encode("utf-8")
-st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
-
-st.caption("Data: Yahoo Finance + Wikipedia")
-
+st.subheader("⭐ TOP 5 akcií podle skóre")
+top5 =

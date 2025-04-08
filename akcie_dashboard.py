@@ -1,4 +1,4 @@
-# ROZŠÍŘENÝ DASHBOARD S TOP AKCIEMI, HEATMAPOU A EXPORTEM
+# ROZŠÍŘENÝ DASHBOARD S DETAILY, GRAFEM A SKÓREM 1–10
 import yfinance as yf
 import pandas as pd
 import streamlit as st
@@ -21,15 +21,17 @@ def get_stock_info(ticker):
     try:
         data = yf.Ticker(ticker)
         info = data.info
+        price = data.history(period="1d")["Close"][-1]
         return {
             "Ticker": ticker,
             "Název": info.get("longName"),
             "Burza": ticker.split(".")[-1] if "." in ticker else "USA",
             "Sektor": info.get("sector"),
+            "Cena": price,
             "P/E": info.get("trailingPE"),
             "ROE": info.get("returnOnEquity"),
             "EPS": info.get("trailingEps"),
-            "Div. výnos (%)": info.get("dividendYield", 0) * 100,
+            "Div. výnos (%)": round(info.get("dividendYield", 0) * 100, 2),
             "D/E poměr": info.get("debtToEquity"),
             "Free Cash Flow": info.get("freeCashflow"),
             "Beta": info.get("beta"),
@@ -55,16 +57,16 @@ def classify_phase(info):
 def calculate_score(info):
     score = 0
     if info.get("trailingPE") and info["trailingPE"] < 15:
-        score += 1
+        score += 2
     if info.get("returnOnEquity") and info["returnOnEquity"] > 0.1:
-        score += 1
+        score += 2
     if info.get("dividendYield") and info["dividendYield"] > 0.03:
-        score += 1
+        score += 2
     if info.get("debtToEquity") and info["debtToEquity"] < 1:
-        score += 1
+        score += 2
     if info.get("freeCashflow") and info["freeCashflow"] > 0:
-        score += 1
-    return score
+        score += 2
+    return min(score, 10)
 
 with st.spinner("Načítám data o akciích..."):
     tickers = get_all_tickers()
@@ -77,13 +79,14 @@ for col in ["ROE", "Div. výnos (%)"]:
     df[col] = df[col].map(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
 df["Free Cash Flow"] = df["Free Cash Flow"].map(lambda x: f"{x/1e6:.0f} mil." if pd.notnull(x) else "N/A")
 df["Market Cap"] = df["Market Cap"].map(lambda x: f"{x/1e9:.1f} mld." if pd.notnull(x) else "N/A")
+df["Cena"] = df["Cena"].map(lambda x: f"${x:.2f}")
 
 # Filtrování
 st.sidebar.header("🔍 Filtrování")
 sector_filter = st.sidebar.multiselect("Sektor", options=sorted(df["Sektor"].dropna().unique()))
 burza_filter = st.sidebar.multiselect("Burza", options=sorted(df["Burza"].unique()))
 faze_filter = st.sidebar.multiselect("Fáze firmy", options=sorted(df["Růstová fáze"].unique()))
-skore_min = st.sidebar.slider("Minimální skóre", 0, 5, 3)
+skore_min = st.sidebar.slider("Minimální skóre", 1, 10, 5)
 
 filtered = df.copy()
 if sector_filter:
@@ -94,32 +97,27 @@ if faze_filter:
     filtered = filtered[filtered["Růstová fáze"].isin(faze_filter)]
 filtered = filtered[filtered["Skóre"] >= skore_min]
 
-# Tabulka
+# Tabulka s kliknutím
 st.subheader("📋 Seznam akcií")
+selected_ticker = st.selectbox("Vyber akcii:", options=filtered["Ticker"].tolist())
 st.dataframe(filtered.set_index("Ticker"), use_container_width=True, height=500)
 
-# TOP akcie
+# Detaily akcie
 st.markdown("---")
-st.markdown("### 🏆 TOP 10 akcií podle skóre")
-top10 = df.sort_values("Skóre", ascending=False).head(10)
-st.table(top10[["Ticker", "Název", "Skóre", "Sektor", "Burza"]])
-
-# Výběr detailu
-st.markdown("---")
-ticker_select = st.selectbox("📌 Vyber akcii pro detaily:", options=filtered["Ticker"].tolist())
-info = df[df["Ticker"] == ticker_select].iloc[0]
-
+info = df[df["Ticker"] == selected_ticker].iloc[0]
 st.markdown(f"### {info['Název']} ({info['Ticker']})")
 st.caption(info["Popis"])
 
-# Graf vývoje ceny
+# Graf a výnosy
 st.subheader("📊 Vývoj ceny akcie")
-period_map = {"1 rok": "1y", "6 měsíců": "6mo", "3 roky": "3y", "5 let": "5y", "10 let": "10y"}
-period_option = st.selectbox("Zvol období:", options=list(period_map.keys()), index=0)
-
-hist = yf.Ticker(ticker_select).history(period=period_map[period_option])
-fig = px.line(hist, x=hist.index, y="Close", title="Vývoj ceny", labels={"Close": "Cena", "Date": "Datum"})
-st.plotly_chart(fig, use_container_width=True)
+periods = {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}
+for label, period in periods.items():
+    hist = yf.Ticker(selected_ticker).history(period=period)
+    if not hist.empty:
+        price_change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
+        st.markdown(f"### {label}: {price_change:.2f}%")
+        fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}", labels={"Close": "Cena", "Date": "Datum"})
+        st.plotly_chart(fig, use_container_width=True)
 
 # Export
 csv = filtered.to_csv(index=False).encode("utf-8")

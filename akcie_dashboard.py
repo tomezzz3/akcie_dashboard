@@ -223,6 +223,6 @@ with tabs[0]:
     st.caption("Data: Yahoo Finance + Wikipedia")
 
 elif page == "⭐ Top výběr":
-    st.subheader("⭐ TOP 5 akcií podle skóre")
-    top5 = filtered.sort_values("Skóre", ascending=False).head(5)
-    st.dataframe(top5.set_index("Ticker"), use_container_width=True)
+    st.subheader("⭐ TOP 30 akcií podle skóre")
+    top30 = filtered.sort_values("Skóre", ascending=False).head(30)
+    st.dataframe(top30.set_index("Ticker"), use_container_width=True)

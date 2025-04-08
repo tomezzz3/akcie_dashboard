@@ -9,7 +9,18 @@ st.title("📈 Podhodnocené akcie s dividendou")
 
 @st.cache_data(show_spinner=False)
 def get_all_tickers():
-    return ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "JNJ", "PG", "KO", "XOM", "CVX", "JPM", "V", "MA", "PFE", "MRK"]
+    # Seznam akcií z hlavních burz (rozšířeno: S&P 500 + Praha + Londýn)
+    sp500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    sp500_table = pd.read_html(sp500_url)
+    sp500 = sp500_table[0]["Symbol"].tolist()
+
+    # České akcie (PSE)
+    ceske = ["CEZ.PR", "KOMB.PR", "MONET.PR", "ERB.PR", "GENEZA.PR"]
+
+    # Londýnské akcie (LSE)
+    londynske = ["HSBA.L", "TSCO.L", "BP.L", "BARC.L", "LLOY.L", "VOD.L"]
+
+    return list(set(sp500 + ceske + londynske))
 
 @st.cache_data(show_spinner=False)
 def get_stock_data(ticker):
@@ -28,7 +39,7 @@ def get_stock_data(ticker):
             "Free Cash Flow": info.get("freeCashflow"),
             "Beta": info.get("beta"),
             "Market Cap": info.get("marketCap"),
-            "Alpha": info.get("alpha", None)  # pokud dostupné
+            "Alpha": info.get("alpha", None)
         }
     except:
         return None
@@ -135,4 +146,4 @@ st.download_button(
     mime='text/csv',
 )
 
-st.caption("Zdroj dat: Yahoo Finance pomocí knihovny yfinance")
+st.caption("Zdroj dat: Yahoo Finance + Wikipedia (S&P 500) + PSE + LSE")

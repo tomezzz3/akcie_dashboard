@@ -24,7 +24,14 @@ def get_all_tickers():
     ceske = ["CEZ.PR", "KOMB.PR", "MONET.PR"]
     polske = ["PKN.OL", "PKOBP.OL", "PEKAO.OL"]
     lse = ["HSBA.L", "TSCO.L", "BP.L"]
-    return sp500 + dax_symbols + ceske + polske + lse
+    nasdaq = pd.read_html("https://en.wikipedia.org/wiki/NASDAQ-100")[3]["Ticker"].tolist()
+nyse = ["JNJ", "PG", "KO", "DIS", "BA", "CAT", "MMM"]  # ukázka (reálný seznam vyžaduje externí zdroj)
+tokyo = ["7203.T", "6758.T", "9984.T"]  # Toyota, Sony, SoftBank (pro Yahoo Finance)
+xetra = ["SAP.DE", "DTE.DE", "BAS.DE", "ALV.DE"]  # ukázkové německé akcie z XETRA
+bse = ["RELIANCE.BO", "TCS.BO", "INFY.BO"]  # Bombay Stock Exchange
+tsx = ["RY.TO", "TD.TO", "BNS.TO"]  # Toronto Stock Exchange
+asx = ["CBA.AX", "BHP.AX", "WES.AX"]  # Australian Stock Exchange
+return sp500 + dax_symbols + ceske + polske + lse + nasdaq + nyse + tokyo + xetra + bse + tsx + asx
 
 @st.cache_data(show_spinner=False)
 def get_stock_info(ticker):
@@ -166,8 +173,8 @@ if burza: filtered = filtered[filtered["Burza"].isin(burza)]
 if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
-st.subheader("⭐ TOP 5 akcií podle skóre")
-top5 = filtered.sort_values("Skóre", ascending=False).head(5)
+st.subheader("⭐ TOP 50 akcií podle skóre")
+top5 = filtered.sort_values("Skóre", ascending=False).head(50)
 st.dataframe(top5.set_index("Ticker"), use_container_width=True)
 
 st.subheader("📋 Výběr akcie")

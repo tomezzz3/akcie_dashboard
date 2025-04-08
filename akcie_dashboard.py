@@ -3,24 +3,21 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime
+from streamlit.components.v1 import html
 
 st.set_page_config(layout="wide")
 st.title("📈 Podhodnocené akcie s dividendou")
 
 @st.cache_data(show_spinner=False)
 def get_all_tickers():
-    # Seznam akcií z hlavních burz (rozšířeno: S&P 500 + Praha + Londýn)
     sp500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     sp500_table = pd.read_html(sp500_url)
     sp500 = sp500_table[0]["Symbol"].tolist()
 
-    # České akcie (PSE)
     ceske = ["CEZ.PR", "KOMB.PR", "MONET.PR", "ERB.PR", "GENEZA.PR"]
-
-    # Londýnské akcie (LSE)
     londynske = ["HSBA.L", "TSCO.L", "BP.L", "BARC.L", "LLOY.L", "VOD.L"]
 
-    return list(set(sp500 + ceske + londynske))
+    return list(set(ceske + londynske + sp500[:50]))  # zrychlené načítání
 
 @st.cache_data(show_spinner=False)
 def get_stock_data(ticker):
@@ -29,6 +26,8 @@ def get_stock_data(ticker):
         info = stock.info
         return {
             "Ticker": ticker,
+            "Name": info.get("longName", "N/A"),
+            "Description": info.get("longBusinessSummary", "Není dostupné."),
             "Sector": info.get("sector", "N/A"),
             "P/E Ratio": info.get("trailingPE"),
             "EPS": info.get("trailingEps"),
@@ -81,6 +80,30 @@ def calculate_score(row, sector_pe_avg):
         score += weights["Alpha"]
     return round(score, 2)
 
+def get_color(value, param):
+    if param == "P/E Ratio":
+        if value < 10: return "darkgreen"
+        elif value < 15: return "green"
+        elif value < 20: return "yellow"
+        else: return "red"
+    elif param == "Dividend Yield":
+        if value > 5: return "darkgreen"
+        elif value > 3: return "green"
+        elif value > 1: return "yellow"
+        else: return "red"
+    elif param == "ROE":
+        if value > 0.2: return "darkgreen"
+        elif value > 0.1: return "green"
+        elif value > 0.05: return "yellow"
+        else: return "red"
+    elif param == "Debt/Equity":
+        if value < 0.3: return "darkgreen"
+        elif value < 0.7: return "green"
+        elif value < 1.5: return "yellow"
+        else: return "red"
+    else:
+        return "lightgray"
+
 with st.spinner("Načítám data o akciích..."):
     tickers = get_all_tickers()
     data = [get_stock_data(t) for t in tickers]
@@ -99,34 +122,28 @@ if selected_sector != "Vše":
     filtered_df = filtered_df[filtered_df["Sector"] == selected_sector]
 
 st.subheader("📋 Výsledky podle investičního skóre")
-st.dataframe(filtered_df[["Ticker", "Sector", "P/E Ratio", "Dividend Yield", "ROE", "Debt/Equity", "Free Cash Flow", "Beta", "Alpha", "Skóre"]].reset_index(drop=True))
 
-selected_ticker = st.selectbox("Vyber akcii pro zobrazení grafu:", options=filtered_df["Ticker"].tolist())
-period_option = st.selectbox("Zvolit období pro vývoj ceny:", [
-    "1 měsíc", "3 měsíce", "6 měsíců", "1 rok", "3 roky", "5 let", "10 let", "20 let"])
+for _, row in filtered_df.iterrows():
+    st.markdown(f"### {row['Name']} ({row['Ticker']})")
+    st.caption(row['Description'])
 
-period_map = {
-    "1 měsíc": "1mo",
-    "3 měsíce": "3mo",
-    "6 měsíců": "6mo",
-    "1 rok": "1y",
-    "3 roky": "3y",
-    "5 let": "5y",
-    "10 let": "10y",
-    "20 let": "20y"
-}
+    cols = st.columns(6)
+    metrics = ["P/E Ratio", "Dividend Yield", "ROE", "Debt/Equity", "Free Cash Flow", "Skóre"]
+    for i, metric in enumerate(metrics):
+        val = row.get(metric, "N/A")
+        color = get_color(val, metric) if metric in ["P/E Ratio", "Dividend Yield", "ROE", "Debt/Equity"] else "lightgray"
+        with cols[i]:
+            st.markdown(f"<div style='background-color:{color};padding:10px;border-radius:10px;text-align:center'>"
+                        f"<b>{metric}</b><br>{round(val, 2) if isinstance(val, (int, float)) else val}</div>", unsafe_allow_html=True)
+
+selected_ticker = st.selectbox("📈 Zobrazit graf pro akcii:", options=filtered_df["Ticker"].tolist())
+period_option = st.selectbox("Období pro vývoj ceny:", ["1 měsíc", "3 měsíce", "6 měsíců", "1 rok", "3 roky", "5 let", "10 let", "20 let"])
+period_map = {"1 měsíc": "1mo", "3 měsíce": "3mo", "6 měsíců": "6mo", "1 rok": "1y", "3 roky": "3y", "5 let": "5y", "10 let": "10y", "20 let": "20y"}
 
 if selected_ticker:
     st.subheader(f"📊 Vývoj ceny: {selected_ticker} - {period_option}")
     hist = yf.Ticker(selected_ticker).history(period=period_map[period_option])
-
-    fig = go.Figure(data=[go.Candlestick(
-        x=hist.index,
-        open=hist['Open'],
-        high=hist['High'],
-        low=hist['Low'],
-        close=hist['Close']
-    )])
+    fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
     fig.update_layout(title=f"Vývoj ceny akcie: {selected_ticker}", xaxis_title="Datum", yaxis_title="Cena", height=500)
     st.plotly_chart(fig)
 
@@ -143,7 +160,7 @@ st.download_button(
     label="📥 Stáhnout výsledky jako CSV",
     data=csv,
     file_name='akcie_filtr_score.csv',
-    mime='text/csv',
+    mime='text/csv'
 )
 
 st.caption("Zdroj dat: Yahoo Finance + Wikipedia (S&P 500) + PSE + LSE")

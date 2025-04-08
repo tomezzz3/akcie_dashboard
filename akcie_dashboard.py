@@ -1,4 +1,3 @@
-# STABILNÍ DASHBOARD (barevné skóre + top 5 + PDF a email)
 import yfinance as yf
 import pandas as pd
 import streamlit as st
@@ -137,7 +136,8 @@ def send_email_with_attachment(receiver_email):
         server.login("your_email@example.com", "your_password")
         server.send_message(msg)
 
-# === ZAČÁTEK HLAVNÍHO KÓDU ===
+# === ZAČÁTEK HLAVNÍHO KÓDU s více stránkami ===
+page = st.sidebar.radio("📄 Stránka", ["📋 Dashboard", "⭐ Top výběr"])
 
 with st.spinner("Načítám data..."):
     tickers = get_all_tickers()
@@ -154,6 +154,7 @@ df["Free Cash Flow"] = df["Free Cash Flow"].map(lambda x: f"{x/1e6:.0f} mil." if
 df["Market Cap"] = df["Market Cap"].map(lambda x: f"{x/1e9:.1f} mld." if pd.notnull(x) else "N/A")
 df["Payout Ratio"] = df["Payout Ratio"].map(lambda x: f"{x:.0%}" if pd.notnull(x) else "N/A")
 
+# Filtrování
 st.sidebar.header("🔍 Filtrování")
 sector = st.sidebar.multiselect("Sektor", sorted(df["Sektor"].dropna().unique()))
 burza = st.sidebar.multiselect("Burza", sorted(df["Burza"].unique()))
@@ -166,61 +167,55 @@ if burza: filtered = filtered[filtered["Burza"].isin(burza)]
 if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
-st.subheader("⭐ TOP 5 akcií podle skóre")
-top5 = filtered.sort_values("Skóre", ascending=False).head(5)
-st.dataframe(top5.set_index("Ticker"), use_container_width=True)
+# Přepínání mezi stránkami
+if page == "📋 Dashboard":
+    st.subheader("📋 Výběr akcie")
+    ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
+    selected = filtered[filtered["Ticker"] == ticker].iloc[0]
 
-st.subheader("📋 Výběr akcie")
-ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
-selected = filtered[filtered["Ticker"] == ticker].iloc[0]
+    styled_df = filtered.copy()
+    styled_df["Skóre"] = styled_df["Skóre"].astype(int)
+    st.dataframe(
+        styled_df.style.background_gradient(subset="Skóre", cmap="RdYlGn", axis=0).format(precision=2),
+        use_container_width=True
+    )
 
-styled_df = filtered.copy()
-styled_df["Skóre"] = styled_df["Skóre"].astype(int)
-st.dataframe(
-    styled_df.style.background_gradient(subset="Skóre", cmap="RdYlGn", axis=0).format(precision=2),
-    use_container_width=True
-)
+    st.markdown("---")
+    st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
+    for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
+        hist = yf.Ticker(ticker).history(period=period)
+        if not hist.empty:
+            change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
+            trend = "🔺" if change >= 0 else "🔻"
+            st.markdown(f"### {label}: {trend} {change:.2f}%")
+            fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
+            st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("---")
-st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
-for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
-    hist = yf.Ticker(ticker).history(period=period)
-    if not hist.empty:
-        change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
-        trend = "🔺" if change >= 0 else "🔻"
-        st.markdown(f"### {label}: {trend} {change:.2f}%")
-        fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
-        st.plotly_chart(fig, use_container_width=True)
+    # Export PDF a odeslání e-mailem
+    st.markdown("---")
+    if st.button("Exportovat PDF report"):
+        chart_path = generate_price_chart(ticker)
+        generate_pdf(ticker, selected, chart_path)
+        with open("report.pdf", "rb") as f:
+            st.download_button("📥 Stáhnout PDF", data=f, file_name=f"{ticker}_report.pdf", mime="application/pdf")
 
-if os.path.exists(HISTORY_FILE):
-    st.subheader("📈 Vývoj skóre – historie")
-    history_df = pd.read_csv(HISTORY_FILE)
-    chart_df = history_df[history_df["Ticker"] == ticker]
-    if not chart_df.empty:
-        fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
-        st.plotly_chart(fig, use_container_width=True)
+    email = st.text_input("Zadat e-mail pro odeslání PDF:")
+    if st.button("Odeslat e-mailem"):
+        if email:
+            try:
+                send_email_with_attachment(email)
+                st.success(f"PDF report odeslán na {email}")
+            except Exception as e:
+                st.error(f"Chyba při odesílání: {e}")
+        else:
+            st.warning("Zadej prosím e-mailovou adresu.")
 
-# 📄 Export PDF a odeslání e-mailem
-st.markdown("---")
-if st.button("📄 Exportovat PDF report"):
-    chart_path = generate_price_chart(ticker)
-    generate_pdf(ticker, selected, chart_path)
-    with open("report.pdf", "rb") as f:
-        st.download_button("📥 Stáhnout PDF", data=f, file_name=f"{ticker}_report.pdf", mime="application/pdf")
+    csv = filtered.to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
 
-email = st.text_input("📧 Zadat e-mail pro odeslání PDF:")
-if st.button("✉️ Odeslat e-mailem"):
-    if email:
-        try:
-            send_email_with_attachment(email)
-            st.success(f"PDF report odeslán na {email}")
-        except Exception as e:
-            st.error(f"Chyba při odesílání: {e}")
-    else:
-        st.warning("Zadej prosím e-mailovou adresu.")
+    st.caption("Data: Yahoo Finance + Wikipedia")
 
-csv = filtered.to_csv(index=False).encode("utf-8")
-st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
-
-st.caption("Data: Yahoo Finance + Wikipedia")
-
+elif page == "⭐ Top výběr":
+    st.subheader("⭐ TOP 30 akcií podle skóre")
+    top30 = filtered.sort_values("Skóre", ascending=False).head(30)
+    st.dataframe(top30.set_index("Ticker"), use_container_width=True)

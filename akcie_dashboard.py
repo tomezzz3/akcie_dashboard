@@ -14,9 +14,11 @@ HISTORY_FILE = "skore_history.csv"
 @st.cache_data(show_spinner=False)
 def get_all_tickers():
     sp500 = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")[0]["Symbol"].tolist()
+    dax = pd.read_html("https://en.wikipedia.org/wiki/DAX")[1]["Ticker symbol"].tolist()
     ceske = ["CEZ.PR", "KOMB.PR", "MONET.PR"]
+    polske = ["PKN.OL", "PKOBP.OL", "PEKAO.OL"]
     lse = ["HSBA.L", "TSCO.L", "BP.L"]
-    return ceske + lse + sp500[:100]
+    return sp500 + dax + ceske + polske + lse
 
 @st.cache_data(show_spinner=False)
 def get_stock_info(ticker):
@@ -62,9 +64,17 @@ def classify_phase(info):
 
 def calculate_score(info):
     score = 0
+    payout_ratio = info.get("payoutRatio") or 0
+    eps = info.get("trailingEps", 0)
+    roe = info.get("returnOnEquity", 0)
+    phase = classify_phase(info)
+
     if info.get("trailingPE") and info["trailingPE"] < 15: score += 3
-    if info.get("payoutRatio") and 0.2 < info["payoutRatio"] < 0.6: score += 2
-    if info.get("trailingEps", 0) > 1 and info.get("dividendYield", 0) > 0: score += 2
+    if payout_ratio > 0:
+        if phase == "📈 Růstová" and 0.1 < payout_ratio < 0.4: score += 2
+        elif phase == "🏦 Stabilní" and 0.3 < payout_ratio < 0.7: score += 2
+        elif phase == "💎 Hodnotová" and 0.5 < payout_ratio < 0.8: score += 2
+    if eps > 1 and info.get("dividendYield", 0) > 0: score += 2
     if info.get("freeCashflow") and info["freeCashflow"] > 0: score += 2
     beta = info.get("beta")
     if beta and 0.7 <= beta <= 1.3: score += 1
@@ -138,4 +148,3 @@ csv = filtered.to_csv(index=False).encode("utf-8")
 st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
 
 st.caption("Data: Yahoo Finance + Wikipedia")
-

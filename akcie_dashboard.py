@@ -3,7 +3,6 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime
-from streamlit.components.v1 import html
 
 st.set_page_config(layout="wide")
 st.title("📈 Podhodnocené akcie s dividendou")
@@ -17,7 +16,7 @@ def get_all_tickers():
     ceske = ["CEZ.PR", "KOMB.PR", "MONET.PR", "ERB.PR", "GENEZA.PR"]
     londynske = ["HSBA.L", "TSCO.L", "BP.L", "BARC.L", "LLOY.L", "VOD.L"]
 
-    return list(set(ceske + londynske + sp500[:50]))  # zrychlené načítání
+    return list(set(ceske + londynske + sp500[:50]))
 
 @st.cache_data(show_spinner=False)
 def get_stock_data(ticker):
@@ -101,6 +100,11 @@ def get_color(value, param):
         elif value < 0.7: return "green"
         elif value < 1.5: return "yellow"
         else: return "red"
+    elif param == "Skóre":
+        if value >= 0.9: return "darkgreen"
+        elif value >= 0.7: return "green"
+        elif value >= 0.4: return "yellow"
+        else: return "red"
     else:
         return "lightgray"
 
@@ -114,53 +118,4 @@ with st.spinner("Načítám data o akciích..."):
     df_sorted = df.sort_values("Skóre", ascending=False)
 
 st.sidebar.header("🔎 Filtrování")
-min_score = st.sidebar.slider("Minimální skóre", 0.0, 1.0, 0.3, 0.05)
-selected_sector = st.sidebar.selectbox("Sektor", options=["Vše"] + sorted(df["Sector"].dropna().unique().tolist()))
-
-filtered_df = df_sorted[df_sorted["Skóre"] >= min_score]
-if selected_sector != "Vše":
-    filtered_df = filtered_df[filtered_df["Sector"] == selected_sector]
-
-st.subheader("📋 Výsledky podle investičního skóre")
-
-for _, row in filtered_df.iterrows():
-    st.markdown(f"### {row['Name']} ({row['Ticker']})")
-    st.caption(row['Description'])
-
-    cols = st.columns(6)
-    metrics = ["P/E Ratio", "Dividend Yield", "ROE", "Debt/Equity", "Free Cash Flow", "Skóre"]
-    for i, metric in enumerate(metrics):
-        val = row.get(metric, "N/A")
-        color = get_color(val, metric) if metric in ["P/E Ratio", "Dividend Yield", "ROE", "Debt/Equity"] else "lightgray"
-        with cols[i]:
-            st.markdown(f"<div style='background-color:{color};padding:10px;border-radius:10px;text-align:center'>"
-                        f"<b>{metric}</b><br>{round(val, 2) if isinstance(val, (int, float)) else val}</div>", unsafe_allow_html=True)
-
-selected_ticker = st.selectbox("📈 Zobrazit graf pro akcii:", options=filtered_df["Ticker"].tolist())
-period_option = st.selectbox("Období pro vývoj ceny:", ["1 měsíc", "3 měsíce", "6 měsíců", "1 rok", "3 roky", "5 let", "10 let", "20 let"])
-period_map = {"1 měsíc": "1mo", "3 měsíce": "3mo", "6 měsíců": "6mo", "1 rok": "1y", "3 roky": "3y", "5 let": "5y", "10 let": "10y", "20 let": "20y"}
-
-if selected_ticker:
-    st.subheader(f"📊 Vývoj ceny: {selected_ticker} - {period_option}")
-    hist = yf.Ticker(selected_ticker).history(period=period_map[period_option])
-    fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
-    fig.update_layout(title=f"Vývoj ceny akcie: {selected_ticker}", xaxis_title="Datum", yaxis_title="Cena", height=500)
-    st.plotly_chart(fig)
-
-    try:
-        start_price = hist.iloc[0]['Close']
-        end_price = hist.iloc[-1]['Close']
-        price_change = ((end_price - start_price) / start_price) * 100
-        st.metric(label="Změna ceny v %", value=f"{price_change:.2f}%")
-    except:
-        st.warning("Nepodařilo se vypočítat změnu ceny.")
-
-csv = filtered_df.to_csv(index=False).encode('utf-8')
-st.download_button(
-    label="📥 Stáhnout výsledky jako CSV",
-    data=csv,
-    file_name='akcie_filtr_score.csv',
-    mime='text/csv'
-)
-
-st.caption("Zdroj dat: Yahoo Finance + Wikipedia (S&P 500) + PSE + LSE")
+min_score = st.sidebar.slider("Minimální skó_

@@ -148,7 +148,7 @@ with st.spinner("Načítám data..."):
 currency = df["Měna"].mode().values[0] if "Měna" in df.columns else "USD"
 df["Cena"] = df["Cena"].map(lambda x: f"{currency} {x:.2f}")
 df["ROE"] = df["ROE"] * 100
-df["ROE"] = df["ROE"].map(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+df["ROE"] = df["ROE"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and pd.notnull(x) else "N/A")
 df["Dividenda"] = df["Dividenda"].map(lambda x: f"{currency} {x:.2f}" if pd.notnull(x) else "N/A")
 df["Free Cash Flow"] = df["Free Cash Flow"].map(lambda x: f"{x/1e6:.0f} mil." if pd.notnull(x) else "N/A")
 df["Market Cap"] = df["Market Cap"].map(lambda x: f"{x/1e9:.1f} mld." if pd.notnull(x) else "N/A")
@@ -175,7 +175,7 @@ if page == "📋 Dashboard":
 
     styled_df = filtered.drop(columns=["Měna", "D/E poměr"])
     styled_df["P/E"] = styled_df["P/E"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
-    styled_df["ROE"] = styled_df["ROE"].map(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+    styled_df["ROE"] = styled_df["ROE"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and pd.notnull(x) else "N/A")
     styled_df["EPS"] = styled_df["EPS"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
     styled_df["Dividenda"] = styled_df["Dividenda"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
 
@@ -184,8 +184,9 @@ if page == "📋 Dashboard":
         use_container_width=True
     )
 
+    # Podíl na trhu
     if "Market Cap" in selected:
-        total_market_cap = df["Market Cap"].sum()
+        total_market_cap = df["Market Cap"].sum()  # Předpokládáme, že to je tržní kapitalizace celé kolekce akcií
         company_market_cap = selected["Market Cap"]
         market_share = company_market_cap / total_market_cap * 100
         st.markdown(f"**Podíl na trhu**: {market_share:.2f}%")
@@ -199,15 +200,6 @@ if page == "📋 Dashboard":
             trend = "🔺" if change >= 0 else "🔻"
             st.markdown(f"### {label}: {trend} {change:.2f}%")
             fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
-            st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("---")
-    st.markdown(f"### 📈 Vývoj skóre pro {ticker}")
-    if os.path.exists(HISTORY_FILE):
-        history_df = pd.read_csv(HISTORY_FILE)
-        chart_df = history_df[history_df["Ticker"] == ticker]
-        if not chart_df.empty:
-            fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
             st.plotly_chart(fig, use_container_width=True)
 
     # Export PDF a odeslání e-mailem
@@ -231,6 +223,8 @@ if page == "📋 Dashboard":
 
     csv = filtered.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
+
+    st.caption("Data: Yahoo Finance + Wikipedia")
 
 elif page == "⭐ Top výběr":
     st.subheader("⭐ TOP 30 akcií podle skóre")

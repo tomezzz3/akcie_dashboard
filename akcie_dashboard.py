@@ -1,11 +1,10 @@
-# DASHBOARD PRO INVESTORA ZAMĚŘENÉHO NA RŮST + DIVIDENDU + PODHODNOCENÍ + RIZIKO
+# STABILNÍ DASHBOARD (bez AgGrid)
 import yfinance as yf
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 from datetime import datetime
 import os
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
 st.set_page_config(layout="wide")
 st.title("📈 Investiční akcie – růst, zisk a hodnota")
@@ -110,58 +109,30 @@ if burza: filtered = filtered[filtered["Burza"].isin(burza)]
 if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
-max_score = filtered["Skóre"].max()
-highlight_code = JsCode(f"""
-    function(params) {{
-        if (params.value == {max_score}) {{
-            return {{
-                'color': 'white',
-                'backgroundColor': '#2ecc71'
-            }}
-        }}
-    }}
-""")
+st.subheader("📋 Výběr akcie")
+ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
+selected = filtered[filtered["Ticker"] == ticker].iloc[0]
 
-st.subheader("📋 Výběr akcií (klikni na řádek)")
-gb = GridOptionsBuilder.from_dataframe(filtered)
-gb.configure_selection("single")
-gb.configure_column("Skóre", cellStyle=highlight_code)
-grid_options = gb.build()
+st.dataframe(filtered.set_index("Ticker"), use_container_width=True)
 
-safe_filtered = filtered.copy()
-safe_filtered = safe_filtered.fillna("")
-for col in ["Cena", "Dividenda", "Payout Ratio", "ROE", "Free Cash Flow", "Market Cap"]:
-    safe_filtered[col] = safe_filtered[col].astype(str)
+st.markdown("---")
+st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
+for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
+    hist = yf.Ticker(ticker).history(period=period)
+    if not hist.empty:
+        change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
+        trend = "🔺" if change >= 0 else "🔻"
+        st.markdown(f"### {label}: {trend} {change:.2f}%")
+        fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
+        st.plotly_chart(fig, use_container_width=True)
 
-response = AgGrid(
-    safe_filtered,
-    gridOptions=grid_options,
-    update_mode=GridUpdateMode.SELECTION_CHANGED,
-    height=500,
-    fit_columns_on_grid_load=True
-)
-selected_row = response.get("selected_rows", [])
-
-if isinstance(selected_row, list) and len(selected_row) > 0:
-    ticker = selected_row[0]['Ticker']
-    st.markdown("---")
-    st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
-    for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
-        hist = yf.Ticker(ticker).history(period=period)
-        if not hist.empty:
-            change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
-            trend = "🔺" if change >= 0 else "🔻"
-            st.markdown(f"### {label}: {trend} {change:.2f}%")
-            fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
-            st.plotly_chart(fig, use_container_width=True)
-
-    if os.path.exists(HISTORY_FILE):
-        st.subheader("📈 Vývoj skóre – historie")
-        history_df = pd.read_csv(HISTORY_FILE)
-        chart_df = history_df[history_df["Ticker"] == ticker]
-        if not chart_df.empty:
-            fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
-            st.plotly_chart(fig, use_container_width=True)
+if os.path.exists(HISTORY_FILE):
+    st.subheader("📈 Vývoj skóre – historie")
+    history_df = pd.read_csv(HISTORY_FILE)
+    chart_df = history_df[history_df["Ticker"] == ticker]
+    if not chart_df.empty:
+        fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
+        st.plotly_chart(fig, use_container_width=True)
 
 csv = filtered.to_csv(index=False).encode("utf-8")
 st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")

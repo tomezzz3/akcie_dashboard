@@ -31,14 +31,7 @@ def get_all_tickers():
     bse = ["RELIANCE.BO", "TCS.BO", "INFY.BO"]
     tsx = ["RY.TO", "TD.TO", "BNS.TO"]
     asx = ["CBA.AX", "BHP.AX", "WES.AX"]
-    nasdaq = pd.read_html("https://en.wikipedia.org/wiki/NASDAQ-100")[3]["Ticker"].tolist()
-nyse = ["JNJ", "PG", "KO", "DIS", "BA", "CAT", "MMM"]  # ukázka (reálný seznam vyžaduje externí zdroj)
-tokyo = ["7203.T", "6758.T", "9984.T"]  # Toyota, Sony, SoftBank (pro Yahoo Finance)
-xetra = ["SAP.DE", "DTE.DE", "BAS.DE", "ALV.DE"]  # ukázkové německé akcie z XETRA
-bse = ["RELIANCE.BO", "TCS.BO", "INFY.BO"]  # Bombay Stock Exchange
-tsx = ["RY.TO", "TD.TO", "BNS.TO"]  # Toronto Stock Exchange
-asx = ["CBA.AX", "BHP.AX", "WES.AX"]  # Australian Stock Exchange
-    return sp500 + dax_symbols + ceske + polske + lse + nasdaq + nyse + tokyo + xetra + bse + tsx + asx
+    nasdaq = pd.read_html("https://en.wikipedia.org/wiki/NASDAQ-100")[3]["Ticker"].tolist()    return sp500 + dax_symbols + ceske + polske + lse + nasdaq + nyse + tokyo + xetra + bse + tsx + asx
 
 @st.cache_data(show_spinner=False)
 def get_stock_info(ticker):
@@ -243,5 +236,4 @@ csv = filtered.to_csv(index=False).encode("utf-8")
 st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
 
 st.caption("Data: Yahoo Finance + Wikipedia")
-
 

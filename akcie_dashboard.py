@@ -153,6 +153,8 @@ def send_email_with_attachment(receiver_email):
 
 # === ZAČÁTEK HLAVNÍHO KÓDU ===
 
+page = st.sidebar.radio("📄 Stránka", ["📋 Dashboard", "⭐ Top výběr"])
+
 with st.spinner("Načítám data..."):
     tickers = get_all_tickers()
     data = [get_stock_info(t) for t in tickers]
@@ -180,11 +182,13 @@ if burza: filtered = filtered[filtered["Burza"].isin(burza)]
 if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
-st.subheader("⭐ TOP 50 akcií podle skóre")
-top5 = filtered.sort_values("Skóre", ascending=False).head(50)
-st.dataframe(top5.set_index("Ticker"), use_container_width=True)
+if page == "⭐ Top výběr":
+    st.subheader("⭐ TOP 50 akcií podle skóre")
+    top5 = filtered.sort_values("Skóre", ascending=False).head(50)
+    st.dataframe(top5.set_index("Ticker"), use_container_width=True)
 
-st.subheader("📋 Výběr akcie")
+if page == "📋 Dashboard":
+    st.subheader("📋 Výběr akcie")
 ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
 selected = filtered[filtered["Ticker"] == ticker].iloc[0]
 

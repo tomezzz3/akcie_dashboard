@@ -195,9 +195,8 @@ selected = filtered[filtered["Ticker"] == ticker].iloc[0]
 styled_df = filtered.copy()
 styled_df["Skóre"] = styled_df["Skóre"].astype(int)
 
-# Převod formátovaných sloupců zpět na čísla pro barevný gradient
-for col in ["P/E", "ROE", "EPS", "Dividenda"]:
-    styled_df[col] = pd.to_numeric(df[col], errors="coerce")
+styled_df["ROE"] = df["ROE"]
+styled_df["Dividenda"] = df["Dividenda"]
 
 st.dataframe(
     styled_df.style.format(precision=2),

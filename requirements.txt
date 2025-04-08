@@ -1,3 +1,5 @@
+pdfkit
+Jinja2
 streamlit
 yfinance
 pandas

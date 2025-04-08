@@ -129,8 +129,12 @@ gb = GridOptionsBuilder.from_dataframe(filtered)
 gb.configure_selection("single")
 gb.configure_column("Skóre", cellStyle=highlight_code)
 grid_options = gb.build()
+
+# bezpečný dataframe pro AgGrid
+safe_filtered = filtered.fillna("N/A")
+
 response = AgGrid(
-    filtered,
+    safe_filtered,
     gridOptions=grid_options,
     update_mode=GridUpdateMode.SELECTION_CHANGED,
     height=500,

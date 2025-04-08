@@ -200,8 +200,7 @@ for col in ["P/E", "ROE", "EPS", "Dividenda"]:
     styled_df[col] = pd.to_numeric(df[col], errors="coerce")
 
 st.dataframe(
-    styled_df.style.background_gradient(subset=["Skóre", "P/E", "ROE", "EPS", "Dividenda"], cmap="RdYlGn", axis=0).set_properties(subset=["ROE", "Dividenda"], **{"color": "black"})
-    .format(precision=2),
+    styled_df.style.format(precision=2),
     use_container_width=True
 )
 

@@ -18,17 +18,20 @@ def get_stock_info(ticker):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
+        hist_div = stock.dividends
         price = stock.history(period="1d")["Close"][-1]
+        last_dividend = hist_div[-1] if not hist_div.empty else 0
         return {
             "Ticker": ticker,
             "Název": info.get("longName"),
+            "Měna": info.get("currency", "USD"),
             "Burza": ticker.split(".")[-1] if "." in ticker else "USA",
             "Sektor": info.get("sector"),
             "Cena": price,
             "P/E": info.get("trailingPE"),
             "ROE": info.get("returnOnEquity"),
             "EPS": info.get("trailingEps"),
-            "Div. výnos (%)": info.get("dividendYield", 0) * 100,
+            "Dividenda": last_dividend,
             "D/E poměr": info.get("debtToEquity"),
             "Free Cash Flow": info.get("freeCashflow"),
             "Market Cap": info.get("marketCap"),
@@ -62,28 +65,39 @@ def add_icon(metric, value):
     if pd.isna(value): return "❔"
     if metric == "P/E": return "💰" if value < 15 else "⚠️"
     if metric == "ROE": return "📈" if value > 10 else "🔻"
-    if metric == "Div. výnos (%)": return "💸" if value > 3 else "🔸"
+    if metric == "Dividenda": return "💸" if value > 1 else "🔸"
     if metric == "D/E poměr": return "🟢" if value < 1 else "🔴"
     return ""
 
+# Načtení a zpracování
 with st.spinner("Načítám data..."):
     tickers = get_all_tickers()
     data = [get_stock_info(t) for t in tickers]
     df = pd.DataFrame([d for d in data if d])
 
-# Formátování
-df["Cena"] = df["Cena"].map(lambda x: f"${x:.2f}")
+# Formátování měny
+currency = df["Měna"].mode().values[0] if "Měna" in df.columns else "USD"
+df["Cena"] = df["Cena"].map(lambda x: f"{currency} {x:.2f}")
 df["ROE"] = df["ROE"] * 100
 df["ROE"] = df["ROE"].map(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
-df["Div. výnos (%)"] = df["Div. výnos (%)"].map(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+df["Dividenda"] = df["Dividenda"].map(lambda x: f"{currency} {x:.2f}" if pd.notnull(x) else "N/A")
 df["Free Cash Flow"] = df["Free Cash Flow"].map(lambda x: f"{x/1e6:.0f} mil." if pd.notnull(x) else "N/A")
 df["Market Cap"] = df["Market Cap"].map(lambda x: f"{x/1e9:.1f} mld." if pd.notnull(x) else "N/A")
 
 # Ikony
 df["P/E"] = df["P/E"].combine(df["P/E"].map(lambda v: add_icon("P/E", v)), lambda val, icon: f"{icon} {val:.1f}" if pd.notnull(val) else "❔")
-df["ROE"] = df["ROE"].combine(df["ROE"].map(lambda v: add_icon("ROE", float(v.replace('%','')))), lambda val, icon: f"{icon} {val}" if pd.notnull(val) else "❔")
-df["Div. výnos (%)"] = df["Div. výnos (%)"].combine(df["Div. výnos (%)"].map(lambda v: add_icon("Div. výnos (%)", float(v.replace('%','')))), lambda val, icon: f"{icon} {val}" if pd.notnull(val) else "❔")
-df["D/E poměr"] = df["D/E poměr"].combine(df["D/E poměr"].map(lambda v: add_icon("D/E poměr", v)), lambda val, icon: f"{icon} {val:.2f}" if pd.notnull(val) else "❔")
+df["ROE"] = df["ROE"].combine(
+    df["ROE"].map(lambda v: add_icon("ROE", float(v.replace('%',''))) if isinstance(v, str) and '%' in v else "❔"),
+    lambda val, icon: f"{icon} {val}" if pd.notnull(val) else "❔"
+)
+df["Dividenda"] = df["Dividenda"].combine(
+    df["Dividenda"].map(lambda v: add_icon("Dividenda", float(v.replace(currency, '').strip())) if isinstance(v, str) and currency in v else "❔"),
+    lambda val, icon: f"{icon} {val}" if pd.notnull(val) else "❔"
+)
+df["D/E poměr"] = df["D/E poměr"].combine(
+    df["D/E poměr"].map(lambda v: add_icon("D/E poměr", v)),
+    lambda val, icon: f"{icon} {val:.2f}" if pd.notnull(val) else "❔"
+)
 
 # Filtrování
 st.sidebar.header("🔍 Filtrování")
@@ -101,13 +115,15 @@ filtered = filtered[filtered["Skóre"] >= min_skore]
 # Tabulka
 st.subheader("📋 Seznam akcií")
 selected = st.dataframe(
-    filtered.set_index("Ticker")[["Název", "Cena", "P/E", "ROE", "EPS", "Div. výnos (%)", "D/E poměr", "Free Cash Flow", "Market Cap", "Skóre"]],
+    filtered.set_index("Ticker")[
+        ["Název", "Cena", "P/E", "ROE", "EPS", "Dividenda", "D/E poměr", "Free Cash Flow", "Market Cap", "Skóre"]
+    ],
     use_container_width=True,
     height=500,
     on_select="select_row"
 )
 
-# Po kliknutí – vykreslit graf
+# Klik → graf
 clicked_ticker = st.session_state.get("select_row", {}).get("rowIndex")
 if clicked_ticker is not None and clicked_ticker < len(filtered):
     ticker = filtered.iloc[clicked_ticker]["Ticker"]

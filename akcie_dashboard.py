@@ -4,7 +4,7 @@ import streamlit as st
 import plotly.express as px
 from datetime import datetime
 import os
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
 st.set_page_config(layout="wide")
 st.title("📈 Investiční akcie – růst, zisk a hodnota")
@@ -110,10 +110,24 @@ if burza: filtered = filtered[filtered["Burza"].isin(burza)]
 if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
 filtered = filtered[filtered["Skóre"] >= min_skore]
 
+# 🔝 Zvýraznění nejlepší akcie
+max_score = filtered["Skóre"].max()
+highlight_code = JsCode(f"""
+    function(params) {{
+        if (params.value == {max_score}) {{
+            return {{
+                'color': 'white',
+                'backgroundColor': '#2ecc71'
+            }}
+        }}
+    }}
+""")
+
 # 📋 Výběr pomocí AgGrid
 st.subheader("📋 Výběr akcií (klikni na řádek)")
 gb = GridOptionsBuilder.from_dataframe(filtered)
 gb.configure_selection("single")
+gb.configure_column("Skóre", cellStyle=highlight_code)
 grid_options = gb.build()
 response = AgGrid(
     filtered,
@@ -122,10 +136,10 @@ response = AgGrid(
     height=500,
     fit_columns_on_grid_load=True
 )
-selected_row = response['selected_rows']
+selected_row = response.get("selected_rows", [])
 
-# 📊 Detail a grafy
-if selected_row:
+# 📊 Výstup po výběru
+if isinstance(selected_row, list) and len(selected_row) > 0:
     ticker = selected_row[0]['Ticker']
     st.markdown("---")
     st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
@@ -138,14 +152,13 @@ if selected_row:
             fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
             st.plotly_chart(fig, use_container_width=True)
 
-# 📈 Historie skóre
-if os.path.exists(HISTORY_FILE) and selected_row:
-    st.subheader("📈 Vývoj skóre – historie")
-    history_df = pd.read_csv(HISTORY_FILE)
-    chart_df = history_df[history_df["Ticker"] == ticker]
-    if not chart_df.empty:
-        fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
-        st.plotly_chart(fig, use_container_width=True)
+    if os.path.exists(HISTORY_FILE):
+        st.subheader("📈 Vývoj skóre – historie")
+        history_df = pd.read_csv(HISTORY_FILE)
+        chart_df = history_df[history_df["Ticker"] == ticker]
+        if not chart_df.empty:
+            fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
+            st.plotly_chart(fig, use_container_width=True)
 
 # 📥 Export
 csv = filtered.to_csv(index=False).encode("utf-8")

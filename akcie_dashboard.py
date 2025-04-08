@@ -192,8 +192,6 @@ st.dataframe(
     styled_df.style.background_gradient(subset=["Skóre", "P/E", "ROE", "EPS", "Dividenda"], cmap="RdYlGn", axis=0)
     .format(precision=2),
     use_container_width=True
-).format(precision=2),
-    use_container_width=True
 )
 
 st.markdown("---")

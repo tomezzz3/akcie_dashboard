@@ -177,7 +177,7 @@ selected = filtered[filtered["Ticker"] == ticker].iloc[0]
 styled_df = filtered.copy()
 styled_df["Skóre"] = styled_df["Skóre"].astype(int)
 st.dataframe(
-    styled_df.style.background_gradient(subset="Skóre", cmap="RdYlGn", axis=0).set_precision(2),
+    styled_df.style.background_gradient(subset="Skóre", cmap="RdYlGn", axis=0).format(precision=2),
     use_container_width=True
 )
 

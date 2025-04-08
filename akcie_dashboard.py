@@ -31,7 +31,8 @@ def get_all_tickers():
     bse = ["RELIANCE.BO", "TCS.BO", "INFY.BO"]
     tsx = ["RY.TO", "TD.TO", "BNS.TO"]
     asx = ["CBA.AX", "BHP.AX", "WES.AX"]
-    nasdaq = pd.read_html("https://en.wikipedia.org/wiki/NASDAQ-100")[3]["Ticker"].tolist()    return sp500 + dax_symbols + ceske + polske + lse + nasdaq + nyse + tokyo + xetra + bse + tsx + asx
+    nasdaq = pd.read_html("https://en.wikipedia.org/wiki/NASDAQ-100")[3]["Ticker"].tolist()
+    return sp500 + dax_symbols + ceske + polske + lse + nasdaq + nyse + tokyo + xetra + bse + tsx + asx
 
 @st.cache_data(show_spinner=False)
 def get_stock_info(ticker):

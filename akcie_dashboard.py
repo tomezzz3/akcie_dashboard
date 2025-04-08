@@ -173,12 +173,22 @@ if page == "📋 Dashboard":
     ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
     selected = filtered[filtered["Ticker"] == ticker].iloc[0]
 
-    styled_df = filtered.copy()
-    styled_df["Skóre"] = styled_df["Skóre"].astype(int)
+    styled_df = filtered.drop(columns=["Měna", "D/E poměr"])
+    styled_df["P/E"] = styled_df["P/E"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
+    styled_df["ROE"] = styled_df["ROE"].map(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+    styled_df["EPS"] = styled_df["EPS"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
+    styled_df["Dividenda"] = styled_df["Dividenda"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "N/A")
+
     st.dataframe(
-        styled_df.style.background_gradient(subset="Skóre", cmap="RdYlGn", axis=0).format(precision=2),
+        styled_df.style.background_gradient(subset=["P/E", "ROE", "EPS", "Dividenda"], cmap="RdYlGn", axis=0).format(precision=2),
         use_container_width=True
     )
+
+    if "Market Cap" in selected:
+        total_market_cap = df["Market Cap"].sum()
+        company_market_cap = selected["Market Cap"]
+        market_share = company_market_cap / total_market_cap * 100
+        st.markdown(f"**Podíl na trhu**: {market_share:.2f}%")
 
     st.markdown("---")
     st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
@@ -189,6 +199,15 @@ if page == "📋 Dashboard":
             trend = "🔺" if change >= 0 else "🔻"
             st.markdown(f"### {label}: {trend} {change:.2f}%")
             fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown(f"### 📈 Vývoj skóre pro {ticker}")
+    if os.path.exists(HISTORY_FILE):
+        history_df = pd.read_csv(HISTORY_FILE)
+        chart_df = history_df[history_df["Ticker"] == ticker]
+        if not chart_df.empty:
+            fig = px.line(chart_df, x="Datum", y="Skóre", title=f"Skóre v čase – {ticker}")
             st.plotly_chart(fig, use_container_width=True)
 
     # Export PDF a odeslání e-mailem
@@ -212,8 +231,6 @@ if page == "📋 Dashboard":
 
     csv = filtered.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Export do CSV", data=csv, file_name="akcie_filtr.csv", mime="text/csv")
-
-    st.caption("Data: Yahoo Finance + Wikipedia")
 
 elif page == "⭐ Top výběr":
     st.subheader("⭐ TOP 30 akcií podle skóre")

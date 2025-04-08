@@ -104,3 +104,172 @@ def calculate_score(info):
     if beta and 0.7 <= beta <= 1.3:
         score += 1
     return min(score, 10)
+
+# === Hlavní stránka a logika dashboardu ===
+
+page = st.sidebar.radio("📄 Stránka", ["📋 Dashboard", "⭐ Top výběr", "🧮 Kalkulačka investic"])
+
+with st.spinner("Načítám data..."):
+    tickers = get_all_tickers()
+    data = [get_stock_info(t) for t in tickers]
+    df = pd.DataFrame([d for d in data if d])
+
+currency = df["Měna"].mode().values[0] if "Měna" in df.columns else "USD"
+df["Cena"] = df["Cena"].map(lambda x: f"{currency} {x:.2f}")
+df["ROE"] = df["ROE"] * 100
+df["ROE"] = df["ROE"].map(lambda x: f"{x:.2f}%" if pd.notnull(x) else "N/A")
+df["Dividenda"] = df["Dividenda"].map(lambda x: f"{currency} {x:.2f}" if pd.notnull(x) else "N/A")
+df["Free Cash Flow"] = df["Free Cash Flow"].map(lambda x: f"{x/1e6:.0f} mil." if pd.notnull(x) else "N/A")
+df["Market Cap"] = df["Market Cap"].map(lambda x: f"{x/1e9:.1f} mld." if pd.notnull(x) else "N/A")
+df["Payout Ratio"] = df["Payout Ratio"].map(lambda x: f"{x:.0%}" if pd.notnull(x) else "N/A")
+
+st.sidebar.header("🔍 Filtrování")
+sector = st.sidebar.multiselect("Sektor", sorted(df["Sektor"].dropna().unique()))
+burza = st.sidebar.multiselect("Burza", sorted(df["Burza"].unique()))
+faze = st.sidebar.multiselect("Fáze", sorted(df["Fáze"].unique()))
+min_skore = st.sidebar.slider("Minimální skóre", 1, 10, 6)
+
+filtered = df.copy()
+if sector: filtered = filtered[filtered["Sektor"].isin(sector)]
+if burza: filtered = filtered[filtered["Burza"].isin(burza)]
+if faze: filtered = filtered[filtered["Fáze"].isin(faze)]
+filtered = filtered[filtered["Skóre"] >= min_skore]
+
+if page == "⭐ Top výběr":
+    st.subheader("⭐ TOP 50 akcií podle skóre")
+    top50 = filtered.sort_values("Skóre", ascending=False).head(50)
+    st.dataframe(top50.set_index("Ticker"), use_container_width=True)
+
+elif page == "📋 Dashboard":
+    st.subheader("📋 Výběr akcie")
+    ticker = st.selectbox("Vyber akcii", options=filtered["Ticker"].unique())
+    selected = filtered[filtered["Ticker"] == ticker].iloc[0]
+
+    styled_df = filtered.copy()
+    styled_df["Skóre"] = styled_df["Skóre"].astype(int)
+    styled_df["ROE"] = df["ROE"]
+    styled_df["Dividenda"] = df["Dividenda"]
+
+    st.dataframe(styled_df.style.format(precision=2), use_container_width=True)
+
+    st.markdown("---")
+    st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
+    for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
+        hist = yf.Ticker(ticker).history(period=period)
+        if not hist.empty:
+            change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
+            trend = "🔺" if change >= 0 else "🔻"
+            st.markdown(f"### {label}: {trend} {change:.2f}%")
+            fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
+            st.plotly_chart(fig, use_container_width=True)
+
+elif page == "🧮 Kalkulačka investic":
+    st.title("💰 Investiční kalkulačka – simulace pravidelného nákupu akcií")
+    invest_per_month = st.number_input("Měsíční investice (USD)", min_value=10, value=1000, step=10)
+    start_date = st.date_input("Začátek investování", value=datetime(2020, 1, 1))
+    top_n = st.selectbox("Počet TOP akcií (podle skóre 10–8)", [10, 30, 50])
+
+    @st.cache_data
+    def load_history():
+        df = pd.read_csv("skore_history.csv")
+        df["Datum"] = pd.to_datetime(df["Datum"])
+        prices = {}
+        tickers = df[df['Skóre'] >= 8]['Ticker'].unique()
+        for ticker in tickers:
+            hist = yf.Ticker(ticker).history(period="max")["Close"]
+            prices[ticker] = hist
+        return df, prices
+
+    df_hist, prices = load_history()
+
+    @st.cache_data
+    def get_dividends(tickers):
+        divs = {}
+        for t in tickers:
+            try:
+                dividends = yf.Ticker(t).dividends
+                divs[t] = dividends
+            except:
+                divs[t] = pd.Series()
+        return divs
+
+    dividends_data = get_dividends(df_hist['Ticker'].unique())
+
+    portfolio = []
+    reinvested_cash = 0
+    cumulative_dividends = 0
+    monthly_portfolio = []
+    current_date = pd.to_datetime(start_date)
+
+    while current_date < datetime.today():
+        current_portfolio = []
+        month_df = df_hist[df_hist["Datum"] == current_date.strftime("%Y-%m-%d")]
+        top_df = month_df[month_df["Skóre"] >= 8].sort_values("Skóre", ascending=False).head(top_n)
+        tickers = top_df["Ticker"].tolist()
+        total_investment = invest_per_month + reinvested_cash
+        amount_per_stock = total_investment / len(tickers) if tickers else 0
+
+        for ticker in tickers:
+            if ticker in prices and current_date in prices[ticker].index:
+                price = prices[ticker].loc[current_date]
+                shares = amount_per_stock / price if price > 0 else 0
+                current_portfolio.append({
+                    "Datum": current_date,
+                    "Ticker": ticker,
+                    "Cena": price,
+                    "Kusy": shares,
+                    "Investováno": amount_per_stock
+                })
+
+        portfolio.extend(current_portfolio)
+
+        hodnota = sum(
+            row["Kusy"] * prices[row["Ticker"]].loc[current_date]
+            for row in current_portfolio
+            if row["Ticker"] in prices and current_date in prices[row["Ticker"]].index
+        )
+
+        month_dividends = 0
+        for row in current_portfolio:
+            ticker = row["Ticker"]
+            shares = row["Kusy"]
+            if ticker in dividends_data:
+                div_series = dividends_data[ticker]
+                if current_date in div_series.index:
+                    dividend = div_series.loc[current_date] * shares
+                    month_dividends += dividend
+
+        cumulative_dividends += month_dividends
+        reinvested_cash = month_dividends
+        monthly_portfolio.append({"Datum": current_date, "Hodnota": hodnota, "Dividendy": cumulative_dividends})
+
+        current_date += timedelta(days=32)
+        current_date = current_date.replace(day=1)
+
+    portfolio_df = pd.DataFrame(portfolio)
+
+    if not portfolio_df.empty:
+        summary = portfolio_df.groupby("Ticker").agg({
+            "Kusy": "sum",
+            "Investováno": "sum"
+        }).reset_index()
+
+        summary["Aktuální cena"] = summary["Ticker"].apply(lambda x: prices[x].iloc[-1] if x in prices else 0)
+        summary["Hodnota"] = summary["Kusy"] * summary["Aktuální cena"]
+        summary["Zhodnocení"] = (summary["Hodnota"] - summary["Investováno"]) / summary["Investováno"] * 100
+
+        st.subheader("📊 Výsledky simulace")
+        st.dataframe(summary.set_index("Ticker"))
+        st.metric("💵 Celková investice", f"{summary['Investováno'].sum():,.0f} USD")
+        st.metric("📈 Aktuální hodnota", f"{summary['Hodnota'].sum():,.0f} USD")
+        st.metric("📊 Celkové zhodnocení", f"{summary['Zhodnocení'].mean():.2f} %")
+
+        st.subheader("📈 Vývoj hodnoty portfolia v čase")
+        timeline = pd.DataFrame(monthly_portfolio)
+        st.line_chart(timeline.set_index("Datum")[["Hodnota"]])
+
+        st.subheader("📤 Kumulované dividendy")
+        st.line_chart(timeline.set_index("Datum")[["Dividendy"]])
+    else:
+        st.warning("Žádná investice nebyla provedena v daném období.")
+

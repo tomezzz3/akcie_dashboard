@@ -283,7 +283,8 @@ elif page == "🧮 Kalkulačka investic":
             if ticker in prices:
                 price_series = prices[ticker]
                 if not price_series.empty:
-                    closest_date = price_series.index[price_series.index.get_indexer([current_date], method="nearest")[0]]
+                    current_ts = pd.Timestamp(current_date)
+                    closest_date = price_series.index[price_series.index.get_indexer([current_ts], method="nearest")[0]]
                     price = price_series.loc[closest_date]
                 shares = amount_per_stock / price if price > 0 else 0
                 current_portfolio.append({

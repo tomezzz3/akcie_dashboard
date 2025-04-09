@@ -343,6 +343,16 @@ elif page == "🧮 Kalkulačka investic":
 
         st.subheader("📤 Kumulované dividendy")
         st.line_chart(timeline.set_index("Datum")[["Dividendy"]])
+
+        # 📊 Porovnání s S&P 500
+        st.subheader("📊 Porovnání s indexem S&P 500")
+        sp500 = yf.Ticker("^GSPC").history(period="max")["Close"]
+        sp500 = sp500[sp500.index >= timeline["Datum"].min()]
+        base_value = sp500.iloc[0]
+        sp500_relative = (sp500 / base_value) * invest_per_month
+        combined = pd.DataFrame({"Portfolio": timeline.set_index("Datum")["Hodnota"], "S&P 500": sp500_relative})
+        combined = combined.dropna()
+        st.line_chart(combined)
     else:
         st.warning("Žádná investice nebyla provedena v daném období.")
 

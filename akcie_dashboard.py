@@ -120,11 +120,63 @@ def log_score_history(df):
     backup_filename = f"backup_skore_{today}.csv"
     combined.to_csv(backup_filename, index=False)
 
+def generate_historical_scores(start="2020-01"):
+    start_date = pd.to_datetime(start)
+    today = pd.to_datetime(datetime.today().date())
+    months = pd.date_range(start=start_date, end=today, freq="MS")
+    history_records = []
+
+    for date in months:
+        tickers = get_all_tickers()
+        for ticker in tickers:
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                eps = info.get("trailingEps", 0)
+                roe = info.get("returnOnEquity", 0)
+                mc = info.get("marketCap", 0)
+                pe = info.get("trailingPE")
+                payout_ratio = info.get("payoutRatio") or 0
+                fcf = info.get("freeCashflow")
+                beta = info.get("beta")
+                dividend_yield = info.get("dividendYield", 0)
+
+                # klasifikace fáze firmy
+                if eps > 2 and roe > 0.15:
+                    phase = "📈 Růstová"
+                elif mc and mc > 5e10:
+                    phase = "🏦 Stabilní"
+                else:
+                    phase = "💎 Hodnotová"
+
+                score = 0
+                if pe and pe < 15: score += 3
+                if payout_ratio > 0:
+                    if phase == "📈 Růstová" and 0.1 < payout_ratio < 0.4: score += 2
+                    elif phase == "🏦 Stabilní" and 0.3 < payout_ratio < 0.7: score += 2
+                    elif phase == "💎 Hodnotová" and 0.5 < payout_ratio < 0.8: score += 2
+                if eps > 1 and dividend_yield > 0: score += 2
+                if fcf and fcf > 0: score += 2
+                if beta and 0.7 <= beta <= 1.3: score += 1
+
+                score = min(score, 10)
+                history_records.append({"Ticker": ticker, "Skóre": score, "Datum": date.strftime("%Y-%m-%d")})
+
+            except Exception:
+                continue
+
+    hist_df = pd.DataFrame(history_records)
+    hist_df.to_csv("skore_history.csv", index=False)
+    return hist_df
+
 # === Hlavní stránka a logika dashboardu ===
 
 page = st.sidebar.radio("📄 Stránka", ["📋 Dashboard", "⭐ Top výběr", "🧮 Kalkulačka investic"])
 
 with st.spinner("Načítám data..."):
+    if not os.path.exists(HISTORY_FILE):
+        with st.spinner("Generuji historické skóre..."):
+            generate_historical_scores()
     tickers = get_all_tickers()
     data = [get_stock_info(t) for t in tickers]
     log_score_history(pd.DataFrame([d for d in data if d]))

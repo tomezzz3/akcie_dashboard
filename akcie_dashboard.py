@@ -105,6 +105,18 @@ def calculate_score(info):
         score += 1
     return min(score, 10)
 
+def log_score_history(df):
+    today = datetime.today().strftime("%Y-%m-%d")
+    log_df = df[["Ticker", "Skóre"]].copy()
+    log_df["Datum"] = today
+    if os.path.exists(HISTORY_FILE):
+        old = pd.read_csv(HISTORY_FILE)
+        combined = pd.concat([old, log_df], ignore_index=True)
+        combined.drop_duplicates(subset=["Ticker", "Datum"], inplace=True)
+    else:
+        combined = log_df
+    combined.to_csv(HISTORY_FILE, index=False)
+
 # === Hlavní stránka a logika dashboardu ===
 
 page = st.sidebar.radio("📄 Stránka", ["📋 Dashboard", "⭐ Top výběr", "🧮 Kalkulačka investic"])
@@ -112,6 +124,7 @@ page = st.sidebar.radio("📄 Stránka", ["📋 Dashboard", "⭐ Top výběr", "
 with st.spinner("Načítám data..."):
     tickers = get_all_tickers()
     data = [get_stock_info(t) for t in tickers]
+    log_score_history(pd.DataFrame([d for d in data if d]))
     df = pd.DataFrame([d for d in data if d])
 
 currency = df["Měna"].mode().values[0] if "Měna" in df.columns else "USD"

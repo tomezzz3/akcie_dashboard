@@ -116,6 +116,9 @@ def log_score_history(df):
     else:
         combined = log_df
     combined.to_csv(HISTORY_FILE, index=False)
+    # záloha
+    backup_filename = f"backup_skore_{today}.csv"
+    combined.to_csv(backup_filename, index=False)
 
 # === Hlavní stránka a logika dashboardu ===
 
@@ -216,7 +219,7 @@ elif page == "🧮 Kalkulačka investic":
 
     while current_date < datetime.today():
         current_portfolio = []
-        month_df = df_hist[df_hist["Datum"] == current_date.strftime("%Y-%m-%d")]
+        month_df = df_hist[df_hist["Datum"].dt.to_period("M") == current_date.to_period("M")]
         top_df = month_df[month_df["Skóre"] >= 8].sort_values("Skóre", ascending=False).head(top_n)
         tickers = top_df["Ticker"].tolist()
         total_investment = invest_per_month + reinvested_cash

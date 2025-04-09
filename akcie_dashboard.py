@@ -123,7 +123,7 @@ def log_score_history(df):
 def generate_historical_scores(start="2020-01"):
     start_date = pd.to_datetime(start)
     today = pd.to_datetime(datetime.today().date())
-    months = pd.date_range(start=start_date, end=today, freq="MS")
+    months = pd.date_range(start=start_date, end=today, freq="M")
     history_records = []
 
     for date in months:
@@ -160,7 +160,8 @@ def generate_historical_scores(start="2020-01"):
                 if beta and 0.7 <= beta <= 1.3: score += 1
 
                 score = min(score, 10)
-                history_records.append({"Ticker": ticker, "Skóre": score, "Datum": date.strftime("%Y-%m-%d")})
+                ultimo_date = date + pd.offsets.MonthEnd(0)
+history_records.append({"Ticker": ticker, "Skóre": score, "Datum": ultimo_date.strftime("%Y-%m-%d")})
 
             except Exception:
                 continue

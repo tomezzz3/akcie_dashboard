@@ -223,6 +223,7 @@ elif page == "📋 Dashboard":
 
     st.markdown("---")
     st.markdown(f"### 📊 Vývoj ceny pro: {ticker}")
+    st.components.v1.iframe(f"https://s.tradingview.com/widgetembed/?symbol={ticker}&interval=D&theme=light", height=500, scrolling=True)
     for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
         hist = yf.Ticker(ticker).history(period=period)
         if not hist.empty:

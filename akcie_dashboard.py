@@ -280,8 +280,11 @@ elif page == "🧮 Kalkulačka investic":
         amount_per_stock = total_investment / len(tickers) if tickers else 0
 
         for ticker in tickers:
-            if ticker in prices and current_date in prices[ticker].index:
-                price = prices[ticker].loc[current_date]
+            if ticker in prices:
+                price_series = prices[ticker]
+                if not price_series.empty:
+                    closest_date = price_series.index[price_series.index.get_indexer([current_date], method="nearest")[0]]
+                    price = price_series.loc[closest_date]
                 shares = amount_per_stock / price if price > 0 else 0
                 current_portfolio.append({
                     "Datum": current_date,
@@ -294,9 +297,9 @@ elif page == "🧮 Kalkulačka investic":
         portfolio.extend(current_portfolio)
 
         hodnota = sum(
-            row["Kusy"] * prices[row["Ticker"]].loc[current_date]
+            row["Kusy"] * prices[row["Ticker"]].iloc[-1]
             for row in current_portfolio
-            if row["Ticker"] in prices and current_date in prices[row["Ticker"]].index
+            if row["Ticker"] in prices and not prices[row["Ticker"]].empty
         )
 
         month_dividends = 0

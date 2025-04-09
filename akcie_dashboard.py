@@ -161,7 +161,7 @@ def generate_historical_scores(start="2020-01"):
 
                 score = min(score, 10)
                 ultimo_date = date + pd.offsets.MonthEnd(0)
-history_records.append({"Ticker": ticker, "Skóre": score, "Datum": ultimo_date.strftime("%Y-%m-%d")})
+                history_records.append({"Ticker": ticker, "Skóre": score, "Datum": ultimo_date.strftime("%Y-%m-%d")})
 
             except Exception:
                 continue

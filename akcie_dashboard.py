@@ -45,9 +45,9 @@ def get_stock_info(ticker):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
-        price = stock.history(period="1d")["Close"][-1]
+        price = stock.history(period="1d")["Close"].iloc[-1]
         hist_div = stock.dividends
-        last_div = hist_div[-1] if not hist_div.empty else 0
+        last_div = hist_div.iloc[-1] if not hist_div.empty else 0
         payout_ratio = info.get("payoutRatio")
         return {
             "Ticker": ticker,
@@ -227,7 +227,7 @@ elif page == "📋 Dashboard":
     for label, period in {"ROK": "1y", "3 ROKY": "3y", "5 LET": "5y"}.items():
         hist = yf.Ticker(ticker).history(period=period)
         if not hist.empty:
-            change = ((hist["Close"][-1] - hist["Close"][0]) / hist["Close"][0]) * 100
+            change = ((hist["Close"].iloc[-1] - hist["Close"].iloc[0]) / hist["Close"].iloc[0]) * 100
             trend = "🔺" if change >= 0 else "🔻"
             st.markdown(f"### {label}: {trend} {change:.2f}%")
             fig = px.line(hist, x=hist.index, y="Close", title=f"Vývoj ceny za {label}")
@@ -282,6 +282,7 @@ elif page == "🧮 Kalkulačka investic":
         for ticker in tickers:
             if ticker in prices:
                 price_series = prices[ticker]
+                price = 0
                 if not price_series.empty:
                     current_ts = pd.Timestamp(current_date)
                     closest_date = price_series.index[price_series.index.get_indexer([current_ts], method="nearest")[0]]

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -10,31 +10,76 @@ from math import erf, sqrt
 
 from data import winsorize_by_sector
 
+try:  # pragma: no cover - optional dependency
+    from sklearn.preprocessing import RobustScaler
+except Exception:  # pragma: no cover
+    RobustScaler = None
 
-@dataclass
-class ScoringConfig:
-    weights: Dict[str, float]
-    winsor_limits: tuple[float, float]
-    peg_bonus_band: tuple[float, float]
-    peg_penalty_threshold: float
+# Prefer pydantic for config validation but fall back to dataclass if unavailable
+try:  # pragma: no cover - optional dependency
+    from pydantic import BaseModel, field_validator
 
-    @classmethod
-    def from_dict(cls, d: Dict) -> "ScoringConfig":
-        return cls(
-            weights=d.get("weights", {}),
-            winsor_limits=tuple(d.get("winsor_limits", (0.05, 0.95))),
-            peg_bonus_band=tuple(d.get("peg_bonus_band", (0.5, 1.5))),
-            peg_penalty_threshold=d.get("peg_penalty_threshold", 2.5),
-        )
+    class ScoringConfig(BaseModel):
+        """Configuration with validation for scoring parameters."""
+
+        weights: Dict[str, float]
+        winsor_limits: tuple[float, float]
+        peg_bonus_band: tuple[float, float]
+        peg_penalty_threshold: float
+
+        @field_validator("weights")
+        @classmethod
+        def _validate_weights(cls, v: Dict[str, float]) -> Dict[str, float]:
+            expected = {f"M{i}" for i in range(1, 7)}
+            missing = expected - v.keys()
+            if missing:
+                raise ValueError(f"Missing weights for: {sorted(missing)}")
+            if sum(v.values()) <= 0:
+                raise ValueError("Weights must sum to a positive value")
+            return v
+
+        @field_validator("winsor_limits")
+        @classmethod
+        def _validate_limits(cls, v: tuple[float, float]) -> tuple[float, float]:
+            lo, hi = v
+            if not (0 <= lo < hi <= 1):
+                raise ValueError("winsor_limits must be within [0,1] and lo < hi")
+            return v
+
+        @classmethod
+        def from_dict(cls, d: Dict) -> "ScoringConfig":
+            return cls(**d)
+
+except Exception:  # pragma: no cover
+
+    @dataclass
+    class ScoringConfig:
+        weights: Dict[str, float]
+        winsor_limits: tuple[float, float]
+        peg_bonus_band: tuple[float, float]
+        peg_penalty_threshold: float
+
+        @classmethod
+        def from_dict(cls, d: Dict) -> "ScoringConfig":
+            return cls(
+                weights=d.get("weights", {}),
+                winsor_limits=tuple(d.get("winsor_limits", (0.05, 0.95))),
+                peg_bonus_band=tuple(d.get("peg_bonus_band", (0.5, 1.5))),
+                peg_penalty_threshold=d.get("peg_penalty_threshold", 2.5),
+            )
 
 
 def _robust_z(x: pd.Series) -> pd.Series:
-    median = np.nanmedian(x)
-    mad = np.nanmedian(np.abs(x - median))
-    if mad == 0:
-        mad = 1.0
-    z = (x - median) / (1.4826 * mad)
-    return pd.Series(z, index=x.index)
+    """Compute robust z-scores using RobustScaler if available."""
+    arr = x.fillna(x.median()).to_numpy()
+    if RobustScaler:
+        scaler = RobustScaler(with_centering=True, with_scaling=True)
+        scaled = scaler.fit_transform(arr.reshape(-1, 1)).ravel() * 1.349
+    else:  # fallback using MAD
+        median = np.nanmedian(arr)
+        mad = np.nanmedian(np.abs(arr - median)) or 1.0
+        scaled = (arr - median) / (1.4826 * mad)
+    return pd.Series(scaled, index=x.index)
 
 
 def _score(series: pd.Series, higher_is_better: bool = True) -> pd.Series:

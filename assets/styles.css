@@ -1,0 +1,19 @@
+body {
+  font-family: 'Inter', sans-serif;
+}
+.metric-card {
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  background: var(--background-color, #fff);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  margin-right: 4px;
+}
+.badge.success {background-color: #4caf50; color: white;}
+.badge.warning {background-color: #ff9800; color: white;}
+.badge.danger {background-color: #f44336; color: white;}

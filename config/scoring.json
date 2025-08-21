@@ -1,0 +1,6 @@
+{
+  "weights": {"M1":30, "M2":20, "M3":20, "M4":15, "M5":10, "M6":5},
+  "winsor_limits": [0.05, 0.95],
+  "peg_bonus_band": [0.5, 1.5],
+  "peg_penalty_threshold": 2.5
+}

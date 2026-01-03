@@ -10,3 +10,4 @@ reportlab
 scikit-learn
 pydantic
 pytest
+PyYAML

@@ -1,67 +1,181 @@
-import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from data import load_universe, get_fundamentals
-from scoring import ScoringConfig, compute_scores, assign_badges
-from ui_components import metric_card, badge
-from report import export_pdf
+SRC_DIR = Path(__file__).resolve().parent / "src"
+sys.path.append(str(SRC_DIR))
 
-CONFIG_PATH = Path('config/scoring.json')
+from config import load_app_config
+from data import data_quality, load_fundamentals, load_prices, load_universe
+from features import compute_fundamental_features, compute_macro_features, compute_price_features
+from factors import compute_factor_scores
+from preferences import list_presets, preset_effects, toggle_summary
+from macro import infer_regime, macro_adjustment, macro_sensitivity
+from redflags import RED_FLAG_RULES, evaluate_red_flags, flag_descriptions, red_flag_penalty
+from models import bootstrap_confidence, confidence_score, probability_from_score
+from portfolio import construct_portfolio
+from risk import max_drawdown, stress_scenarios, var_cvar
+from backtest import walk_forward
+from analyst import MEMO_TEMPLATE, memo_to_db, peer_table
+from report import export_report
+from alerts import generate_alerts
 
 
-def load_config() -> ScoringConfig:
-    cfg = json.loads(Path(CONFIG_PATH).read_text())
-    return ScoringConfig.from_dict(cfg)
+st.set_page_config(page_title="FounderQuant", layout="wide")
 
 
-def prepare_dataframe(fund: pd.DataFrame) -> pd.DataFrame:
-    df = fund.copy()
-    df['ev_ebitda'] = df['ev'] / df['ebitda']
-    df['fcf_yield'] = df['fcf'] / df['marketCap']
-    df['rev_cagr'] = df['eps_cagr'] = df['fcf_cagr'] = 0.0
-    df['roic'] = df['gm_stability'] = df['int_cover'] = df['accruals'] = 0.0
-    df['perf_1m'] = df['perf_3m'] = df['perf_6m'] = df['perf_12m'] = 0.0
-    df['dist_52w'] = df['max_dd'] = df['net_debt_ebitda'] = 0.0
-    df['div_yield'] = df['dividendYield'].fillna(0)
-    df['payout_ratio'] = df['payoutRatio'].fillna(0)
-    df['div_cagr'] = 0.0
-    df['eps_fwd_growth'] = df['eps_fwd_growth'].fillna(0.1)
-    df.rename(columns={'ticker': 'Ticker', 'sector': 'Sector'}, inplace=True)
+def sidebar_preferences(cfg):
+    st.sidebar.header("Preference Layer")
+    preset_key = st.sidebar.selectbox("Preset profil", options=list(cfg.presets.keys()), format_func=lambda k: cfg.presets[k].name)
+    preset = cfg.presets[preset_key]
+    st.sidebar.caption(preset.description)
+    st.sidebar.write("Toggles:")
+    for name, enabled in preset.toggles.__dict__.items():
+        st.sidebar.checkbox(name, value=enabled, key=f"toggle_{name}", disabled=True)
+    st.sidebar.write("Risk pravidla")
+    st.sidebar.json(preset.risk.__dict__)
+    st.sidebar.write("Filtry")
+    st.sidebar.json(preset.filters.__dict__)
+    return preset
+
+
+def prepare_dataset(tickers):
+    fundamentals = compute_fundamental_features(tickers)
+    price_feats = compute_price_features(tickers)
+    df = pd.merge(fundamentals, price_feats, on="ticker")
+    return df
+
+
+def apply_filters(df: pd.DataFrame, preset):
+    f = preset.filters
+    if f.market_cap_min:
+        df = df[df["market_cap"] >= f.market_cap_min]
+    if f.market_cap_max:
+        df = df[df["market_cap"] <= f.market_cap_max]
+    if f.dividend_yield_min:
+        df = df[df["div_yield"] >= f.dividend_yield_min]
+    if f.fcf_yield_min:
+        df = df[df["fcf_yield"] >= f.fcf_yield_min]
+    if f.ev_ebitda_max:
+        df = df[df["ev_ebitda"] <= f.ev_ebitda_max]
+    if f.momentum_12m_min:
+        df = df[df["mom_12m"] >= f.momentum_12m_min]
     return df
 
 
 def main():
-    st.set_page_config(page_title="ValueRadar", layout="wide")
-    st.title("ValueRadar")
-    st.write("Multi-factor stock screener with GARP overlay")
+    cfg = load_app_config()
+    preset = sidebar_preferences(cfg)
 
-    cfg = load_config()
+    st.title("FounderQuant")
+    st.write("Probabilistický multi-faktorový radar s ochranou proti biasům")
+
     universe = load_universe()
-    tickers = universe['Ticker'].head(50).tolist()
-    with st.spinner("Downloading data..."):
-        fundamentals = get_fundamentals(tickers)
-    df = prepare_dataframe(fundamentals)
-    scores = compute_scores(df, cfg)
-    scores['badges'] = assign_badges(scores)
+    tickers = universe["ticker"].tolist()
+    df = prepare_dataset(tickers)
+    dq = data_quality(df)
+    macro_feats = compute_macro_features()
+    regime, regime_probs = infer_regime(macro_feats)
 
-    col1, col2, col3, col4 = st.columns(4)
-    metric_card("Universe size", str(len(scores)))
-    metric_card("Median Composite", f"{scores['Composite'].median():.1f}")
-    top = scores.sort_values('Composite', ascending=False).iloc[0]
-    metric_card("Top pick", f"{top['ticker']} ({top['Composite']:.1f})")
-    metric_card("% Undervalued", f"{(scores['M1']>=70).mean()*100:.0f}%")
+    df = apply_filters(df, preset)
+    factor_scores, weights = compute_factor_scores(df, preset.weights, preset.toggles)
+    macro_adj = macro_adjustment(regime)
+    for k, v in macro_adj.items():
+        factor_scores[k] = factor_scores[k] + v
+    factor_scores["macro_regime"] = regime
+    factor_scores["composite_adj"] = factor_scores["composite"] + sum(macro_adj.values())
 
-    st.dataframe(scores[['ticker','Sector','Composite','M1','M2','M3','M4','M5','M6','PEG','badges']].round(2))
+    red_flags = evaluate_red_flags(df)
+    factor_scores["red_flag_penalty"] = red_flag_penalty(red_flags)
+    factor_scores["composite_final"] = factor_scores["composite_adj"] - factor_scores["red_flag_penalty"]
+    factor_scores["p_outperform"] = probability_from_score(factor_scores["composite_final"])
 
-    if st.button("Export Top5 PDF"):
-        top5 = scores.sort_values('Composite', ascending=False).head(5)
-        path = export_pdf(top5, 'top5.pdf')
-        with open(path, 'rb') as f:
-            st.download_button("Download PDF", f, file_name='top5.pdf')
+    prices = load_prices(df["ticker"])
+    returns = prices.pct_change().dropna().mean(axis=1)
+    mean_ret, (ci_low, ci_high) = bootstrap_confidence(returns)
+    factor_scores["confidence"] = confidence_score(dq.coverage_ratio, liquidity=0.8, stability=0.7)
+
+    portfolio = construct_portfolio(factor_scores, preset.risk, top_n=5)
+    bt = walk_forward(factor_scores, prices)
+    alerts = generate_alerts(factor_scores, regime_prob=regime_probs.get("risk_off", 0.0), red_flags=red_flags)
+
+    radar, screener, analyst_tab, portfolio_tab, backtest_tab, report_tab, preferences_tab = st.tabs(
+        [
+            "Market Radar",
+            "Screener & Ranking",
+            "Analyst Workspace",
+            "Portfolio Builder",
+            "Backtest Lab",
+            "Report & Decision Log",
+            "Preferences & Filters",
+        ]
+    )
+
+    with radar:
+        st.subheader("Makro režim a riziko")
+        st.metric("Režim", regime)
+        st.json(regime_probs)
+        st.write("Makro vstupy")
+        st.json(macro_feats)
+        st.write("Beta citlivost proxy")
+        st.json(macro_sensitivity(factor_scores["risk_defensive"].median()))
+
+    with screener:
+        st.subheader("Top kandidáti")
+        st.write("Composite score = faktorové skóre + makro úprava - risk/red flags")
+        display_cols = ["ticker", "composite_final", "p_outperform", "confidence", "macro_regime"]
+        st.dataframe(factor_scores[display_cols].sort_values("composite_final", ascending=False))
+        st.caption(f"Data coverage: {dq.coverage_ratio:.2f}. Chybějící pole zvyšují nejistotu.")
+        st.write("Red flags")
+        st.dataframe(red_flags.join(df["ticker"], how="left").set_index("ticker"))
+
+    with analyst_tab:
+        st.subheader("Detail tickeru")
+        selected = st.selectbox("Ticker", df["ticker"])
+        row = df[df["ticker"] == selected].iloc[0]
+        st.write("Snapshot")
+        st.json({"sector": row.get("sector"), "market_cap": row.get("market_cap"), "beta": row.get("beta_proxy"), "vol": row.get("vol_1y")})
+        st.write("Peers & multiples")
+        st.dataframe(peer_table(df))
+        st.write("Investment memo")
+        memo_text = st.text_area("Memo", value="\n".join(MEMO_TEMPLATE["Thesis"]))
+        if st.button("Uložit memo"):
+            memo_to_db(selected, memo_text)
+            st.success("Uloženo do decision logu")
+
+    with portfolio_tab:
+        st.subheader("Návrh portfolia")
+        st.dataframe(portfolio[["ticker", "weight", "composite_final"]])
+        portfolio_prices = prices[portfolio["ticker"]]
+        agg_series = (portfolio_prices * portfolio["weight"].values).sum(axis=1)
+        st.write("Stress scénáře")
+        st.dataframe(stress_scenarios(agg_series))
+
+    with backtest_tab:
+        st.subheader("Walk-forward backtest (synthetic)")
+        st.metric("Total return", f"{bt.total_return:.1%}")
+        st.metric("Volatilita", f"{bt.volatility:.1%}")
+        st.metric("Max drawdown", f"{bt.max_drawdown:.1%}")
+
+    with report_tab:
+        st.subheader("Export a decision log")
+        export_path = export_report(factor_scores, Path("reports/top_candidates.csv"))
+        st.download_button("Stáhnout CSV", data=export_path.read_bytes(), file_name="top_candidates.csv")
+        st.write("Alerty")
+        st.write(alerts)
+
+    with preferences_tab:
+        st.subheader("Efekt preferencí")
+        st.write("Aktivní preset:", preset.name)
+        st.dataframe(preset_effects(preset))
+        st.write("Aktuální váhy faktorů")
+        st.json(weights)
+        st.write("Makro úprava")
+        st.json(macro_adj)
+        st.caption(toggle_summary(preset.toggles))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

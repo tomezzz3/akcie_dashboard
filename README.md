@@ -26,3 +26,7 @@ Optional: set `OPENAI_API_KEY` for AI commentary.
 ```bash
 pytest
 ```
+
+## Strategy Blueprint (CZ)
+
+Komplexní návrh investiční/trading strategie a architektury aplikace je v `docs/INVESTMENT_SIGNAL_STRATEGY_CZ.md`.
